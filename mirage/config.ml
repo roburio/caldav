@@ -164,13 +164,8 @@ let http_srv = cohttp_server @@ conduit_direct ~tls:true net
 (* TODO: make it possible to enable and disable schemes without providing a port *)
 let http_port =
   let doc = Key.Arg.info ~doc:"Listening HTTP port." ["http"] ~docv:"PORT" in
-  Key.(create "http_port" Arg.(opt (some int) None doc))
+  Key.(create "http_port" Arg.(opt int 8080 doc))
 
-let https_port =
-  let doc = Key.Arg.info ~doc:"Listening HTTPS port." ["https"] ~docv:"PORT" in
-  Key.(create "https_port" Arg.(opt (some int) None doc))
-
-let certs = generic_kv_ro ~key:Key.(value @@ kv_ro ()) "tls"
 let zap = generic_kv_ro ~key:Key.(value @@ kv_ro ()) "caldavzap"
 
 let admin_password =
@@ -185,13 +180,23 @@ let tofu =
   let doc = Key.Arg.info ~doc:"If a user does not exist, create them and give them a new calendar." [ "tofu" ] in
   Key.(create "tofu" Arg.(flag doc))
 
-let hostname =
-  let doc = Key.Arg.info ~doc:"Hostname to use." [ "host" ] ~docv:"STRING" in
-  Key.(create "hostname" Arg.(required string doc))
+let monitor =
+  let doc = Key.Arg.info ~doc:"monitor host IP" ["monitor"] in
+  Key.(create "monitor" Arg.(opt (some ip_address) None doc))
+
+let syslog =
+  let doc = Key.Arg.info ~doc:"syslog host IP" ["syslog"] in
+  Key.(create "syslog" Arg.(opt (some ip_address) None doc))
+
+let name =
+  let doc = Key.Arg.info ~doc:"Name of the unikernel" ["name"] in
+  Key.(create "name" Arg.(opt string "calendar.robur.coop" doc))
 
 let apple_testable =
   let doc = Key.Arg.info ~doc:"Configure the server to use with Apple CCS CalDAVtester." [ "apple-testable" ] in
   Key.(create "apple_testable" Arg.(flag doc))
+
+let management_stack = generic_stackv4v6 ~group:"management" (netif ~group:"management" "management")
 
 let main =
   let direct_dependencies = [
@@ -201,17 +206,20 @@ let main =
     package ~min:"2.6.0" "irmin-git" ;
     package ~min:"2.6.0" "irmin-mirage-git" ;
     package ~min:"3.4.0" "git-mirage";
+    package ~min:"0.3.0" ~sublibs:["mirage"] "logs-syslog";
+    package ~min:"0.0.2" "monitoring-experiments";
   ] in
   let keys =
     [ Key.abstract seed ; Key.abstract authenticator ;
-      Key.abstract http_port ; Key.abstract https_port ;
+      Key.abstract http_port ;
       Key.abstract admin_password ; Key.abstract remote ;
-      Key.abstract tofu ; Key.abstract hostname ;
+      Key.abstract tofu ;
+      Key.abstract name ; Key.abstract syslog ; Key.abstract monitor ;
       Key.abstract apple_testable ]
   in
   foreign
     ~packages:direct_dependencies ~keys
-    "Unikernel.Main" (random @-> pclock @-> mimic @-> kv_ro @-> http @-> kv_ro @-> job)
+    "Unikernel.Main" (console @-> random @-> time @-> pclock @-> mimic @-> http @-> kv_ro @-> stackv4v6 @-> job)
 
 let mimic ~kind ~seed ~authenticator stackv4v6 random mclock pclock time paf =
   let mtcp = mimic_tcp_impl stackv4v6 in
@@ -226,4 +234,4 @@ let mimic =
     (paf_impl default_time net)
 
 let () =
-  register "caldav" [main $ default_random $ default_posix_clock $ mimic $ certs $ http_srv $ zap ]
+  register "caldav" [main $ default_console $ default_random $ default_time $ default_posix_clock $ mimic $ http_srv $ zap $ management_stack ]

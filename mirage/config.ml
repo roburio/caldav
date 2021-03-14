@@ -161,10 +161,30 @@ let authenticator =
 (* set ~tls to false to get a plain-http server *)
 let http_srv = cohttp_server @@ conduit_direct ~tls:true net
 
+let dns_key =
+  let doc = Key.Arg.info ~doc:"nsupdate key (name:type:value,...)" ["dns-key"] in
+  Key.(create "dns-key" Arg.(required string doc))
+
+let dns_server =
+  let doc = Key.Arg.info ~doc:"dns server IP" ["dns-server"] in
+  Key.(create "dns-server" Arg.(required ip_address doc))
+
+let dns_port =
+  let doc = Key.Arg.info ~doc:"dns server port" ["dns-port"] in
+  Key.(create "dns-port" Arg.(opt int 53 doc))
+
+let key_seed =
+  let doc = Key.Arg.info ~doc:"certificate key seed" ["key-seed"] in
+  Key.(create "key-seed" Arg.(required string doc))
+
 (* TODO: make it possible to enable and disable schemes without providing a port *)
 let http_port =
   let doc = Key.Arg.info ~doc:"Listening HTTP port." ["http"] ~docv:"PORT" in
-  Key.(create "http_port" Arg.(opt int 8080 doc))
+  Key.(create "http_port" Arg.(opt (some int) None doc))
+
+let https_port =
+  let doc = Key.Arg.info ~doc:"Listening HTTPS port." ["https"] ~docv:"PORT" in
+  Key.(create "https_port" Arg.(opt (some int) None doc))
 
 let zap = generic_kv_ro ~key:Key.(value @@ kv_ro ()) "caldavzap"
 
@@ -208,10 +228,12 @@ let main =
     package ~min:"3.4.0" "git-mirage";
     package ~min:"0.3.0" ~sublibs:["mirage"] "logs-syslog";
     package ~min:"0.0.2" "monitoring-experiments";
+    package ~min:"5.0.0" ~sublibs:["mirage"] "dns-certify";
   ] in
   let keys =
     [ Key.abstract seed ; Key.abstract authenticator ;
-      Key.abstract http_port ;
+      Key.abstract dns_key ; Key.abstract dns_server ; Key.abstract dns_port ; Key.abstract key_seed ;
+      Key.abstract http_port ; Key.abstract https_port ;
       Key.abstract admin_password ; Key.abstract remote ;
       Key.abstract tofu ;
       Key.abstract name ; Key.abstract syslog ; Key.abstract monitor ;
@@ -219,7 +241,7 @@ let main =
   in
   foreign
     ~packages:direct_dependencies ~keys
-    "Unikernel.Main" (console @-> random @-> time @-> pclock @-> mimic @-> http @-> kv_ro @-> stackv4v6 @-> job)
+    "Unikernel.Main" (console @-> random @-> time @-> pclock @-> stackv4v6 @-> mimic @-> http @-> kv_ro @-> stackv4v6 @-> job)
 
 let mimic ~kind ~seed ~authenticator stackv4v6 random mclock pclock time paf =
   let mtcp = mimic_tcp_impl stackv4v6 in
@@ -234,4 +256,4 @@ let mimic =
     (paf_impl default_time net)
 
 let () =
-  register "caldav" [main $ default_console $ default_random $ default_time $ default_posix_clock $ mimic $ http_srv $ zap $ management_stack ]
+  register "caldav" [main $ default_console $ default_random $ default_time $ default_posix_clock $ net $ mimic $ http_srv $ zap $ management_stack ]
